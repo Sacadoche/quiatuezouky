@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1 class="text-center">Tableau des Missions</h1>
+<div class="row">
+    <div class="col-md-12">
+        <div class="table-responsive">
+            <table class="table table-bordered puzzle-table">
+                <tbody>
+                    {% for i in range(1, 41) %}
+                    {% if loop.index0 % 5 == 0 and loop.index != 1 %}
+                    </tr><tr>
+                    {% endif %}
+                    <td data-mission-id="{{ i }}"
+                        data-mission-name="{{ missions[i]['name'] }}"
+                        data-mission-description="{{ missions[i]['description'] }}"
+                        data-mission-status="{{ missions[i]['status'] }}"
+                        {% if missions[i]['status'] != 'locked' %}
+                        data-bs-toggle="modal" data-bs-target="#missionModal"
+                        {% endif %}
+                        class="puzzle-piece {{ missions[i]['status'] }}{% if i in completed_missions %} completed{% endif %}">
+                        {% if missions[i]['status'] == 'locked' %}
+                        🔒
+                        {% elif i in completed_missions %}
+                        ✅
+                        {% else %}
+                        🔓
+                        {% endif %}
+                    </td>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Modal -->
+<div class="modal fade" id="missionModal" tabindex="-1" aria-labelledby="missionModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="missionModalLabel">Détails de la Mission</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p><strong>Numéro de la mission:</strong> <span id="mission-id"></span></p>
+                <p><strong>Nom de la mission:</strong> <span id="mission-name"></span></p>
+                <p><strong>Description:</strong> <span id="mission-description"></span></p>
+                <p><strong>Statut:</strong> <span id="mission-status"></span></p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const missionModal = document.getElementById('missionModal');
+
+    if (missionModal) {
+        missionModal.addEventListener('show.bs.modal', function(event) {
+            const button = event.relatedTarget;
+            const missionId = button.getAttribute('data-mission-id');
+
+            // Récupérer les données de la mission depuis les attributs data-*
+            const tdElement = document.querySelector(`td[data-mission-id="${missionId}"]`);
+            const missionName = tdElement.getAttribute('data-mission-name');
+            const missionDescription = tdElement.getAttribute('data-mission-description');
+            const missionStatus = tdElement.getAttribute('data-mission-status');
+
+            const modalTitle = missionModal.querySelector('.modal-title');
+            const modalBody = missionModal.querySelector('.modal-body');
+
+            modalTitle.textContent = `Mission ${missionId}`;
+            modalBody.querySelector('#mission-id').textContent = missionId;
+            modalBody.querySelector('#mission-name').textContent = missionName || `Mission ${missionId}`;
+            modalBody.querySelector('#mission-description').textContent = missionDescription || 'Aucune description';
+            modalBody.querySelector('#mission-status').textContent = missionStatus || 'Inconnu';
+        });
+    }
+
+    // Empêcher l'ouverture de la modale pour les missions verrouillées
+    document.querySelectorAll('.puzzle-piece.locked').forEach(piece => {
+        piece.addEventListener('click', function(e) {
+            e.preventDefault();
+            return false;
+        });
+    });
+});
+</script>
+{% endblock %}

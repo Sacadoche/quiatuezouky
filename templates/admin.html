@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1 class="text-center">Tableau de bord Administrateur</h1>
+
+<div class="row mb-4">
+    <div class="col-md-12">
+        <h2>Gestion des Missions</h2>
+        <div class="table-responsive">
+            <table class="table table-bordered">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Nom</th>
+                        <th>Description</th>
+                        <th>Statut</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for mission in missions %}
+                    <tr>
+                        <td>{{ mission[0] }}</td>
+                        <td>
+                            <input type="text" class="form-control mission-name-input"
+                                   data-mission-id="{{ mission[0] }}"
+                                   value="{{ mission[1] }}">
+                        </td>
+                        <td>
+                            <textarea class="form-control mission-description-input"
+                                      data-mission-id="{{ mission[0] }}">{{ mission[2] }}</textarea>
+                        </td>
+                        <td id="mission-status-{{ mission[0] }}">{{ mission[3] }}</td>
+                        <td>
+                            <select class="form-select mission-status-select" data-mission-id="{{ mission[0] }}">
+                                <option value="locked" {% if mission[3] == 'locked' %}selected{% endif %}>Verrouillé</option>
+                                <option value="unlocked" {% if mission[3] == 'unlocked' %}selected{% endif %}>Déverrouillé</option>
+                            </select>
+                            <button class="btn btn-primary mt-2 save-mission-info" data-mission-id="{{ mission[0] }}">Enregistrer</button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-12">
+        <h2>Gestion des Enquêteurs</h2>
+        {% for investigator in investigators %}
+        {% if investigator[0] != 'admin' %}
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5>{{ investigator[0] }}</h5>
+            </div>
+            <div class="card-body">
+                <h6>Missions Complétées</h6>
+                <div class="row">
+                    {% for mission_id in range(1, 41) %}
+                    {% if loop.index0 % 5 == 0 %}
+                    {% if not loop.first %}
+                    </div><div class="row">
+                    {% endif %}
+                    {% endif %}
+                    <div class="col">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input investigator-mission-checkbox"
+                                   type="checkbox"
+                                   id="mission-{{ investigator[0] }}-{{ mission_id }}"
+                                   data-investigator="{{ investigator[0] }}"
+                                   data-mission-id="{{ mission_id }}"
+                                   {% if mission_id in completed_missions[investigator[0]] %}checked{% endif %}>
+                            <label class="form-check-label" for="mission-{{ investigator[0] }}-{{ mission_id }}">
+                                Mission {{ mission_id }}
+                            </label>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+        {% endfor %}
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Gestion des changements de statut des missions
+    document.querySelectorAll('.mission-status-select').forEach(select => {
+        select.addEventListener('change', function() {
+            const missionId = this.dataset.missionId;
+            const newStatus = this.value;
+
+            fetch('/update_mission_status', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: `mission_id=${missionId}&new_status=${newStatus}`
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    document.getElementById(`mission-status-${missionId}`).textContent = newStatus;
+                } else {
+                    alert('Erreur: ' + data.error);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+            });
+        });
+    });
+
+    // Gestion des cases à cocher pour les missions des enquêteurs
+    document.querySelectorAll('.investigator-mission-checkbox').forEach(checkbox => {
+        checkbox.addEventListener('change', function() {
+            const investigator = this.dataset.investigator;
+            const missionId = this.dataset.missionId;
+            const action = this.checked ? 'add' : 'remove';
+
+            fetch('/update_investigator_mission', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: `investigator=${investigator}&mission_id=${missionId}&action=${action}`
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (!data.success) {
+                    alert('Erreur: ' + data.error);
+                    this.checked = !this.checked; // Revenir à l'état précédent en cas d'erreur
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+            });
+        });
+    });
+
+    // Gestion de l'enregistrement des informations des missions
+    document.querySelectorAll('.save-mission-info').forEach(button => {
+        button.addEventListener('click', function() {
+            const missionId = this.dataset.missionId;
+            const name = document.querySelector(`.mission-name-input[data-mission-id="${missionId}"]`).value;
+            const description = document.querySelector(`.mission-description-input[data-mission-id="${missionId}"]`).value;
+
+            fetch('/update_mission_info', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: `mission_id=${missionId}&name=${encodeURIComponent(name)}&description=${encodeURIComponent(description)}`
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (!data.success) {
+                    alert('Erreur: ' + data.error);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+            });
+        });
+    });
+});
+</script>
+{% endblock %}

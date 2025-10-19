@@ -1,0 +1,39 @@
+body {
+  background-color: #f4f4f4;
+}
+
+.puzzle-table {
+  margin-top: 20px;
+  border-collapse: separate;
+  border-spacing: 2px;
+}
+
+.puzzle-table td {
+  text-align: center;
+  vertical-align: middle;
+  height: 60px;
+  width: 60px;
+  font-size: 24px;
+  cursor: pointer;
+  border-radius: 8px;
+}
+
+.puzzle-table td.locked {
+  background-color: #d9534f;
+  color: white;
+  cursor: not-allowed;
+}
+
+.puzzle-table td.unlocked {
+  background-color: #f0ad4e;
+  color: black;
+}
+
+.puzzle-table td.completed {
+  background-color: #5cb85c;
+  color: white;
+}
+
+.puzzle-table td:hover:not(.locked) {
+  opacity: 0.8;
+}
