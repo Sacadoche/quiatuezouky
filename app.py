@@ -14,8 +14,10 @@ def init_db():
     # Création des tables si elles n'existent pas
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS investigators (
+            identite TEXT NOT NULL,
             username TEXT PRIMARY KEY,
             password TEXT NOT NULL,
+            alias TEXT NOT NULL,
             role TEXT DEFAULT 'enqueteur'
         )
     ''')
@@ -44,10 +46,27 @@ def init_db():
     cursor.execute('SELECT COUNT(*) FROM investigators')
     if cursor.fetchone()[0] == 0:
         # Insertion des enquêteurs
-        cursor.executemany('INSERT INTO investigators (username, password, role) VALUES (?, ?, ?)',
-                           [('enqueteur1', 'password1', 'enqueteur'),
-                            ('enqueteur2', 'password2', 'enqueteur'),
-                            ('admin', 'adminpassword', 'admin')])
+        cursor.executemany('INSERT INTO investigators (identite, username, password, alias, role) VALUES (?, ?, ?, ?, ?)',
+                           [('Cindy BRAEM', '340765080', 'B7429', 'L’Encre Noire', 'enqueteur'),
+                            ('Anne BUREL', '101560170', 'M0384', 'La Main Fantôme', 'enqueteur'),
+                            ('Christelle DOUAY', '164007970', 'T5601', 'La Rose de Fer', 'enqueteur'),
+                            ('Noémie BRASSET', '684015202', 'R1947', 'L’Architecte', 'enqueteur'),
+                            ('Elisabeth DANTU', '350001479', 'H0052', 'La Louve Silencieuse', 'enqueteur'),
+                            ('Tiphaine IVON', '301506961', 'Z8316', 'La Veilleuse', 'enqueteur'),
+                            ('Juliette FROUIN', '150046314', 'K4090', 'L’Ombre du Bureau', 'enqueteur'),
+                            ('Amandine COUÉ', '807346951', 'P2673', 'La Sentinelle', 'enqueteur'),
+                            ('Edouard CHOISNET', '104383930', 'S9104', 'Le Fantôme du Dock', 'enqueteur'),
+                            ('Germain MOREAU', '421198366', 'V3268', 'Le Dernier Mot', 'enqueteur'),
+                            ('Anas ZAHRAWI', '733623419', 'C4507', 'Le Gardien', 'enqueteur'),
+                            ('Eric SZWAICER', '640680605', 'L7720', 'Le Sablier', 'enqueteur'),
+                            ('Mehdi BARBIN', '679809258', 'Y1189', 'Le Corbeau', 'enqueteur'),
+                            ('Frédéric LHUMEAU', '398867831', 'D6043', 'Le Chiffreur', 'enqueteur'),
+                            ('Gweltaz ROBERT', '612820234', 'F2506', 'Le Silencieux', 'enqueteur'),
+                            ('Hugues VAN WEYDEVELT', '414552832', 'N8875', 'Le Marcheur', 'enqueteur'),
+                            ('Maxime LESTRELIN', '534127684', 'X0391', 'L’Horloger', 'enqueteur'),
+                            ('Sébastien LACOUR', '420567302', 'E5562', 'Le Dossier Rouge', 'enqueteur'),
+
+                            ('Mathilde HUBERT', 'macolas', 'macolas', 'Inspecteur Hubert', 'admin')])
 
         # Insertion des missions
         missions = [(i, f'Mission {i}', '', 'locked') for i in range(1, 41)]
@@ -65,10 +84,12 @@ def index():
         return redirect(url_for('login'))
 
     username = session['username']
+    alias = session['alias']
+    role = session['role']
     db = sqlite3.connect('enqueteur.db')
     cursor = db.cursor()
 
-    if username == 'admin':
+    if role == 'admin':
         cursor.execute('SELECT * FROM investigators')
         investigators = cursor.fetchall()
 
@@ -91,6 +112,7 @@ def index():
     ''', (username,))
     completed_missions = [row[0] for row in cursor.fetchall()]
 
+
     # Récupérer toutes les missions
     cursor.execute('SELECT * FROM missions')
     missions_db = cursor.fetchall()
@@ -108,12 +130,14 @@ def login():
         db = sqlite3.connect('enqueteur.db')
         cursor = db.cursor()
 
-        cursor.execute('SELECT password, role FROM investigators WHERE username = ?', (username,))
+        cursor.execute('SELECT password, alias, role FROM investigators WHERE username = ?', (username,))
         user = cursor.fetchone()
         db.close()
 
         if user and user[0] == password:
             session['username'] = username
+            session['alias'] = user[1]
+            session['role'] = user[2]
             return redirect(url_for('index'))
         else:
             return render_template('login.html', error='Nom d\'utilisateur ou mot de passe incorrect')
@@ -126,7 +150,7 @@ def logout():
 
 @app.route('/update_mission_status', methods=['POST'])
 def update_mission_status():
-    if 'username' not in session or session['username'] != 'admin':
+    if 'username' not in session or session['username'] != 'macolas':
         return jsonify({'success': False, 'error': 'Non autorisé'}), 403
 
     mission_id = int(request.form['mission_id'])
@@ -143,7 +167,7 @@ def update_mission_status():
 
 @app.route('/update_investigator_mission', methods=['POST'])
 def update_investigator_mission():
-    if 'username' not in session or session['username'] != 'admin':
+    if 'username' not in session or session['username'] != 'macolas':
         return jsonify({'success': False, 'error': 'Non autorisé'}), 403
 
     investigator = request.form['investigator']
@@ -171,7 +195,7 @@ def update_investigator_mission():
 
 @app.route('/update_mission_info', methods=['POST'])
 def update_mission_info():
-    if 'username' not in session or session['username'] != 'admin':
+    if 'username' not in session or session['username'] != 'macolas':
         return jsonify({'success': False, 'error': 'Non autorisé'}), 403
 
     mission_id = int(request.form['mission_id'])

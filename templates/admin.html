@@ -50,7 +50,7 @@
     <div class="col-md-12">
         <h2>Gestion des Enquêteurs</h2>
         {% for investigator in investigators %}
-        {% if investigator[0] != 'admin' %}
+        {% if investigator[1] != 'macolas' %}
         <div class="card mb-4">
             <div class="card-header">
                 <h5>{{ investigator[0] }}</h5>
@@ -68,11 +68,11 @@
                         <div class="form-check form-switch">
                             <input class="form-check-input investigator-mission-checkbox"
                                    type="checkbox"
-                                   id="mission-{{ investigator[0] }}-{{ mission_id }}"
-                                   data-investigator="{{ investigator[0] }}"
+                                   id="mission-{{ investigator[1] }}-{{ mission_id }}"
+                                   data-investigator="{{ investigator[1] }}"
                                    data-mission-id="{{ mission_id }}"
-                                   {% if mission_id in completed_missions[investigator[0]] %}checked{% endif %}>
-                            <label class="form-check-label" for="mission-{{ investigator[0] }}-{{ mission_id }}">
+                                   {% if mission_id in completed_missions[investigator[1]] %}checked{% endif %}>
+                            <label class="form-check-label" for="mission-{{ investigator[1] }}-{{ mission_id }}">
                                 Mission {{ mission_id }}
                             </label>
                         </div>
