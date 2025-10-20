@@ -244,61 +244,77 @@ def submit_attempt():
     db = sqlite3.connect('enqueteur.db')
     cursor = db.cursor()
 
-    # Récupérer la réponse attendue et le message de succès personnalisé
-    cursor.execute('SELECT expected_answer, success_message FROM missions WHERE mission_id = ?', (mission_id,))
-    row = cursor.fetchone()
-    if not row:
-        db.close()
-        return jsonify({'success': False, 'error': 'Mission inconnue.'}), 404
+    try:
+        # Tente de récupérer expected_answer + success_message (peut échouer si colonne manquante)
+        try:
+            cursor.execute('SELECT expected_answer, success_message FROM missions WHERE mission_id = ?', (mission_id,))
+            row = cursor.fetchone()
+        except sqlite3.OperationalError:
+            # Fallback pour anciennes bases sans success_message
+            cursor.execute('SELECT expected_answer FROM missions WHERE mission_id = ?', (mission_id,))
+            r = cursor.fetchone()
+            row = (r[0] if r else None, None)
 
-    expected_response = (row[0] or '').strip()
-    mission_success_message = (row[1] or '').strip() or 'Mission validée avec succès !'
-
-    if not expected_response:
-        db.close()
-        return jsonify({'success': False, 'error': 'Réponse attendue non définie pour cette mission.'}), 400
-
-    # Normalisation simple
-    def normalize(s: str) -> str:
-        return " ".join(s.strip().lower().split())
-
-    # Récupérer les informations actuelles de la mission pour cet enquêteur
-    cursor.execute('''
-        SELECT attempts, validated FROM investigator_missions
-        WHERE investigator_username = ? AND mission_id = ?
-    ''', (username, mission_id))
-    result = cursor.fetchone()
-
-    if result:
-        attempts, validated = result
-        if validated:
+        if not row:
             db.close()
-            return jsonify({'success': False, 'error': 'Mission déjà validée.'}), 400
+            return jsonify({'success': False, 'error': 'Mission inconnue.'}), 404
 
-        attempts += 1
-        is_valid = normalize(response) == normalize(expected_response)
+        expected_response = (row[0] or '').strip()
+        mission_success_message = (row[1] or '').strip() if len(row) > 1 else ''
+        if not mission_success_message:
+            mission_success_message = 'Mission validée avec succès !'
+
+        if not expected_response:
+            db.close()
+            return jsonify({'success': False, 'error': 'Réponse attendue non définie pour cette mission.'}), 400
+
+        def normalize(s: str) -> str:
+            return " ".join(s.strip().lower().split())
 
         cursor.execute('''
-            UPDATE investigator_missions
-            SET attempts = ?, response = ?, response_time = ?, validated = ?, completed = CASE WHEN ? THEN 1 ELSE completed END
+            SELECT attempts, validated FROM investigator_missions
             WHERE investigator_username = ? AND mission_id = ?
-        ''', (attempts, response, response_time, 1 if is_valid else 0, is_valid, username, mission_id))
-    else:
-        attempts = 1
-        is_valid = normalize(response) == normalize(expected_response)
+        ''', (username, mission_id))
+        result = cursor.fetchone()
 
-        cursor.execute('''
-            INSERT INTO investigator_missions (investigator_username, mission_id, completed, response, response_time, attempts, validated)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        ''', (username, mission_id, 1 if is_valid else 0, response, response_time, attempts, 1 if is_valid else 0))
+        if result:
+            attempts, validated = result
+            if validated:
+                db.close()
+                return jsonify({'success': False, 'error': 'Mission déjà validée.'}), 400
 
-    db.commit()
-    db.close()
+            attempts += 1
+            is_valid = normalize(response) == normalize(expected_response)
 
-    if is_valid:
-        return jsonify({'success': True, 'message': mission_success_message, 'attempts': attempts, 'response_time': response_time})
-    else:
-        return jsonify({'success': False, 'error': 'Réponse incorrecte.', 'attempts': attempts, 'response_time': response_time})
+            cursor.execute('''
+                UPDATE investigator_missions
+                SET attempts = ?, response = ?, response_time = ?, validated = ?, completed = CASE WHEN ? THEN 1 ELSE completed END
+                WHERE investigator_username = ? AND mission_id = ?
+            ''', (attempts, response, response_time, 1 if is_valid else 0, is_valid, username, mission_id))
+        else:
+            attempts = 1
+            is_valid = normalize(response) == normalize(expected_response)
+
+            cursor.execute('''
+                INSERT INTO investigator_missions (investigator_username, mission_id, completed, response, response_time, attempts, validated)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', (username, mission_id, 1 if is_valid else 0, response, response_time, attempts, 1 if is_valid else 0))
+
+        db.commit()
+        db.close()
+
+        if is_valid:
+            return jsonify({'success': True, 'message': mission_success_message, 'attempts': attempts, 'response_time': response_time})
+        else:
+            return jsonify({'success': False, 'error': 'Réponse incorrecte.', 'attempts': attempts, 'response_time': response_time})
+    except Exception as e:
+        # Log et réponse JSON propre
+        try:
+            db.close()
+        except Exception:
+            pass
+        app.logger.exception("Erreur lors de submit_attempt")
+        return jsonify({'success': False, 'error': 'Erreur serveur lors de la soumission.'}), 500
 
 @app.route('/admin_validate_mission', methods=['POST'])
 def admin_validate_mission():

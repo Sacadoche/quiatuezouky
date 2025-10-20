@@ -134,12 +134,23 @@ document.addEventListener("DOMContentLoaded", function () {
         method: "POST",
         headers: {
           "Content-Type": "application/x-www-form-urlencoded",
+          "Accept": "application/json"
         },
-        body: `mission_id=${missionId}&response=${encodeURIComponent(
-          response
-        )}`,
+        body: `mission_id=${missionId}&response=${encodeURIComponent(response)}`,
       })
-        .then((response) => response.json())
+        .then(async (res) => {
+          if (!res.ok) {
+            const text = await res.text().catch(() => "");
+            throw new Error(`HTTP ${res.status}: ${text?.slice(0, 200) || "Erreur inconnue"}`);
+          }
+          // Tentative de parse JSON sécurisée
+          try {
+            return await res.json();
+          } catch {
+            const text = await res.text().catch(() => "");
+            throw new Error(`Réponse non JSON: ${text?.slice(0, 200) || "vide"}`);
+          }
+        })
         .then((data) => {
           if (data.success) {
             // Reflect validated state in UI
@@ -172,9 +183,10 @@ document.addEventListener("DOMContentLoaded", function () {
             alert("Erreur: " + data.error);
           }
         })
-        .catch((error) =>
-          console.error("Erreur lors de la soumission de la réponse :", error)
-        );
+        .catch((error) => {
+          console.error("Erreur lors de la soumission de la réponse :", error);
+          alert("Erreur serveur: " + error.message);
+        });
     });
   }
 
