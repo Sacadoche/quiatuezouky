@@ -76,9 +76,9 @@ def index():
         cursor.execute('SELECT * FROM missions')
         missions = cursor.fetchall()
 
-        # Récupérer les missions complétées pour chaque enquêteur
+        # Récupérer les missions validées pour chaque enquêteur (validated=1)
         completed_missions = defaultdict(list)
-        cursor.execute('SELECT investigator_username, mission_id FROM investigator_missions WHERE completed = 1')
+        cursor.execute('SELECT investigator_username, mission_id FROM investigator_missions WHERE validated = 1')
         for row in cursor.fetchall():
             completed_missions[row[0]].append(row[1])
 
@@ -307,28 +307,45 @@ def admin_validate_mission():
 
     investigator = request.form['investigator']
     mission_id = int(request.form['mission_id'])
+    desired = request.form.get('validated') or request.form.get('checked') or '1'
+    desired_state = 1 if str(desired).lower() in ('1', 'true', 'on', 'yes') else 0
 
     db = sqlite3.connect('enqueteur.db')
     cursor = db.cursor()
 
-    # Mettre à jour ou insérer une tentative réussie pour l'enquêteur
-    response_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')  # Heure actuelle
-    cursor.execute('''
-        INSERT INTO investigator_missions (investigator_username, mission_id, completed, response, response_time, attempts, validated)
-        VALUES (?, ?, 1, 'Validé par admin', ?, 1, 1)
-        ON CONFLICT(investigator_username, mission_id)
-        DO UPDATE SET
-            completed = 1,
-            response = 'Validé par admin',
-            response_time = ?,
-            attempts = attempts + 1,
-            validated = 1
-    ''', (investigator, mission_id, response_time, response_time))
+    if desired_state == 1:
+        # Valider
+        response_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        cursor.execute('''
+            INSERT INTO investigator_missions (investigator_username, mission_id, completed, response, response_time, attempts, validated)
+            VALUES (?, ?, 1, 'Validé par admin', ?, 1, 1)
+            ON CONFLICT(investigator_username, mission_id)
+            DO UPDATE SET
+                completed = 1,
+                response = 'Validé par admin',
+                response_time = excluded.response_time,
+                attempts = CASE WHEN investigator_missions.attempts IS NULL OR investigator_missions.attempts = 0 THEN 1 ELSE investigator_missions.attempts END,
+                validated = 1
+        ''', (investigator, mission_id, response_time))
+        msg = f'Mission {mission_id} validée pour {investigator}.'
+    else:
+        # Invalider
+        cursor.execute('''
+            INSERT INTO investigator_missions (investigator_username, mission_id, completed, response, response_time, attempts, validated)
+            VALUES (?, ?, 0, NULL, NULL, 0, 0)
+            ON CONFLICT(investigator_username, mission_id)
+            DO UPDATE SET
+                completed = 0,
+                response = NULL,
+                response_time = NULL,
+                validated = 0
+        ''', (investigator, mission_id))
+        msg = f'Validation retirée pour {investigator} - mission {mission_id}.'
 
     db.commit()
     db.close()
 
-    return jsonify({'success': True, 'message': f'Mission {mission_id} validée pour {investigator}.'})
+    return jsonify({'success': True, 'message': msg})
 
 @app.route('/mission_status', methods=['GET'])
 def mission_status():

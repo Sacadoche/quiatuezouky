@@ -84,11 +84,12 @@
                         <div class="form-check form-switch">
                             <input class="form-check-input admin-validate-checkbox"
                                    type="checkbox"
+                                   id="mission-{{ investigator[1] }}-{{ mission_id }}"
                                    data-investigator="{{ investigator[1] }}"
                                    data-mission-id="{{ mission_id }}"
                                    {% if mission_id in completed_missions[investigator[1]] %}checked{% endif %}>
                             <label class="form-check-label" for="mission-{{ investigator[1] }}-{{ mission_id }}">
-                                Mission {{ mission_id }}
+                                Mission {{ mission_id }}{% if mission_id in completed_missions[investigator[1]] %} (Validée){% endif %}
                             </label>
                         </div>
                     </div>
@@ -115,32 +116,28 @@ document.addEventListener('DOMContentLoaded', function() {
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded',
                 },
-                body: `investigator=${investigator}&mission_id=${missionId}`
+                body: `investigator=${encodeURIComponent(investigator)}&mission_id=${encodeURIComponent(missionId)}&validated=${isChecked ? 1 : 0}`
             })
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    alert(data.message);
-
-                    // Mettre à jour l'affichage pour les enquêteurs
+                    // MAJ libellé selon l'état
                     const missionLabel = document.querySelector(`label[for="mission-${investigator}-${missionId}"]`);
                     if (missionLabel) {
-                        missionLabel.textContent = `Mission ${missionId} (Validée)`;
+                        missionLabel.textContent = isChecked ? `Mission ${missionId} (Validée)` : `Mission ${missionId}`;
                     }
                 } else {
                     alert('Erreur: ' + data.error);
-                    this.checked = false; // Réinitialiser la case à cocher en cas d'erreur
+                    this.checked = !isChecked; // revert
                 }
             })
             .catch(error => {
                 console.error('Erreur lors de la validation de la mission :', error);
-                this.checked = false; // Réinitialiser la case à cocher en cas d'erreur
+                this.checked = !isChecked; // revert
             });
         });
     });
-});
 
-document.addEventListener('DOMContentLoaded', function() {
     // Gestion de l'enregistrement des informations des missions
     document.querySelectorAll('.save-mission-info').forEach(button => {
         button.addEventListener('click', function() {
