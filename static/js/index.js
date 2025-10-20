@@ -4,7 +4,6 @@ document.addEventListener("DOMContentLoaded", function () {
   const responseField = document.getElementById("mission-response");
   const hiddenMissionIdField = document.getElementById("hidden-mission-id");
   const validatedMessage = document.getElementById("mission-validated-message");
-  const responseSection = document.getElementById("mission-response-section");
 
   // Timer jusqu'à vendredi 31
   const countdownElement = document.getElementById("countdown");
@@ -28,9 +27,6 @@ document.addEventListener("DOMContentLoaded", function () {
   setInterval(updateCountdown, 1000);
   updateCountdown();
 
-  // Track current mission state in the modal
-  let missionState = { validated: false, attempts: 0 };
-
   if (missionModal) {
     missionModal.addEventListener("show.bs.modal", function (event) {
       const button = event.relatedTarget;
@@ -44,60 +40,46 @@ document.addEventListener("DOMContentLoaded", function () {
       if (missionIdElement) {
         missionIdElement.textContent = missionId;
       } else {
-        console.warn("Élément #mission-id introuvable dans la modale.");
+        console.error("Élément #mission-id introuvable dans la modale.");
       }
 
-      // Reset UI state for each open
-      missionState = { validated: false, attempts: 0 };
-      if (responseSection) responseSection.style.display = "";
-      responseField.value = "";
-      responseField.disabled = false;
-      submitResponseButton.style.display = "";
-      submitResponseButton.disabled = false;
-      validatedMessage.style.display = "none";
-      modalBody.querySelector("#mission-attempts").textContent = "0";
-      modalBody.querySelector("#mission-validated").textContent = "Non";
-
-      // Replace previous single fetch with combined info + status
-      Promise.all([
-        fetch(`/get_mission_info/${missionId}`).then((r) => {
-          if (!r.ok) throw new Error("Erreur réseau get_mission_info");
-          return r.json();
-        }),
-        fetch(`/mission_status?mission_id=${missionId}`).then((r) => {
-          if (!r.ok) throw new Error("Erreur réseau mission_status");
-          return r.json();
-        }),
-      ])
-        .then(([missionInfo, status]) => {
-          if (missionInfo.success) {
+      fetch(`/get_mission_info/${missionId}`)
+        .then((response) => {
+          if (!response.ok) {
+            throw new Error("Erreur réseau");
+          }
+          return response.json();
+        })
+        .then((data) => {
+          if (data.success) {
             const modalTitle = missionModal.querySelector(".modal-title");
             modalTitle.textContent = `Mission ${missionId}`;
+            modalBody.querySelector("#mission-name").textContent =
+              data.mission.name;
             modalBody.querySelector("#mission-description").textContent =
-              missionInfo.mission.description || "Aucune description";
+              data.mission.description || "Aucune description";
+            modalBody.querySelector("#mission-status").textContent =
+              data.mission.status;
 
-            // Cacher les champs de réponse si non requis
-            const requiresAnswer = !!missionInfo.mission.requires_answer;
-            if (!requiresAnswer) {
-              if (responseSection) responseSection.style.display = "none";
-              submitResponseButton.style.display = "none";
-            }
-          }
-          if (status.success) {
-            missionState.validated = !!status.validated;
-            missionState.attempts = status.attempts || 0;
-
-            modalBody.querySelector("#mission-attempts").textContent = String(
-              missionState.attempts
+            // Pièce jointe
+            const attachBox = modalBody.querySelector("#mission-attachment");
+            const openLink = modalBody.querySelector(
+              "#mission-attachment-open"
             );
-            modalBody.querySelector("#mission-validated").textContent =
-              missionState.validated ? "Oui" : "Non";
-
-            if (missionState.validated) {
-              responseField.disabled = true;
-              submitResponseButton.disabled = true;
-              validatedMessage.style.display = "block";
+            const dlLink = modalBody.querySelector(
+              "#mission-attachment-download"
+            );
+            if (data.mission.attachment_url) {
+              attachBox.style.display = "block";
+              openLink.href = data.mission.attachment_url;
+              dlLink.href = data.mission.attachment_url;
+            } else {
+              attachBox.style.display = "none";
+              openLink.removeAttribute("href");
+              dlLink.removeAttribute("href");
             }
+          } else {
+            console.error("Erreur:", data.error);
           }
         })
         .catch((error) => {
@@ -114,12 +96,6 @@ document.addEventListener("DOMContentLoaded", function () {
       console.log("Mission ID envoyé (submit):", missionId);
       console.log("Réponse envoyée:", response);
 
-      // Block client-side if already validated
-      if (missionState.validated) {
-        alert("Cette mission est déjà validée.");
-        return;
-      }
-
       if (!missionId || missionId === "null") {
         alert("Erreur : ID de mission invalide.");
         return;
@@ -134,36 +110,14 @@ document.addEventListener("DOMContentLoaded", function () {
         method: "POST",
         headers: {
           "Content-Type": "application/x-www-form-urlencoded",
-          "Accept": "application/json"
         },
-        body: `mission_id=${missionId}&response=${encodeURIComponent(response)}`,
+        body: `mission_id=${missionId}&response=${encodeURIComponent(
+          response
+        )}`,
       })
-        .then(async (res) => {
-          if (!res.ok) {
-            const text = await res.text().catch(() => "");
-            throw new Error(`HTTP ${res.status}: ${text?.slice(0, 200) || "Erreur inconnue"}`);
-          }
-          // Tentative de parse JSON sécurisée
-          try {
-            return await res.json();
-          } catch {
-            const text = await res.text().catch(() => "");
-            throw new Error(`Réponse non JSON: ${text?.slice(0, 200) || "vide"}`);
-          }
-        })
+        .then((response) => response.json())
         .then((data) => {
           if (data.success) {
-            // Reflect validated state in UI
-            missionState.validated = true;
-            missionState.attempts = data.attempts ?? missionState.attempts + 1;
-
-            const missionValidated =
-              document.getElementById("mission-validated");
-            const missionAttempts = document.getElementById("mission-attempts");
-            if (missionValidated) missionValidated.textContent = "Oui";
-            if (missionAttempts)
-              missionAttempts.textContent = String(missionState.attempts);
-
             alert(data.message);
             responseField.value = "";
             responseField.disabled = true;
@@ -183,10 +137,9 @@ document.addEventListener("DOMContentLoaded", function () {
             alert("Erreur: " + data.error);
           }
         })
-        .catch((error) => {
-          console.error("Erreur lors de la soumission de la réponse :", error);
-          alert("Erreur serveur: " + error.message);
-        });
+        .catch((error) =>
+          console.error("Erreur lors de la soumission de la réponse :", error)
+        );
     });
   }
 

@@ -14,7 +14,8 @@ CREATE TABLE IF NOT EXISTS missions (
     description TEXT,
     status TEXT NOT NULL,
     expected_answer TEXT,
-    success_message TEXT
+    success_message TEXT,
+    attachment_path TEXT
 );
 
 -- Création de la table investigator_missions

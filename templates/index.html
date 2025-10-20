@@ -77,9 +77,20 @@
         <!-- Champ caché pour le mission_id -->
         <input type="hidden" id="hidden-mission-id" />
         <p><strong>ID de la Mission:</strong> <span id="mission-id"></span></p>
+        <p><strong>Nom:</strong> <span id="mission-name"></span></p>
+        <p><strong>Statut:</strong> <span id="mission-status"></span></p>
         <p>
           <strong>Description:</strong> <span id="mission-description"></span>
         </p>
+        <!-- Pièce jointe -->
+        <div id="mission-attachment" class="mt-2" style="display:none">
+          <strong>Pièce jointe:</strong>
+          <div>
+            <a id="mission-attachment-open" href="#" target="_blank" rel="noopener">Ouvrir</a>
+            •
+            <a id="mission-attachment-download" href="#" download>Télécharger</a>
+          </div>
+        </div>
         <p><strong>Tentatives:</strong> <span id="mission-attempts">0</span></p>
         <p>
           <strong>Validation:</strong> <span id="mission-validated">Non</span>

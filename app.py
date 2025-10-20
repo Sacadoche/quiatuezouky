@@ -3,9 +3,17 @@ import sqlite3
 import os
 from collections import defaultdict
 from datetime import datetime
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 app.secret_key = 'votre_cle_secrete'  # Remplacez par une clé secrète
+
+# Dossiers et extensions autorisées pour les PDF
+UPLOAD_SUBDIR = os.path.join('static', 'uploads', 'missions')
+ALLOWED_EXTENSIONS = {'pdf'}
+
+def allowed_file(filename: str) -> bool:
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 def apply_schema():
     db = sqlite3.connect('enqueteur.db')
@@ -37,6 +45,12 @@ def apply_schema():
     missions_columns = [col[1] for col in cursor.fetchall()]
     if 'success_message' not in missions_columns:
         cursor.execute("ALTER TABLE missions ADD COLUMN success_message TEXT")
+
+    # Ajouter la colonne attachment_path si manquante
+    cursor.execute("PRAGMA table_info(missions)")
+    missions_columns = [col[1] for col in cursor.fetchall()]
+    if 'attachment_path' not in missions_columns:
+        cursor.execute("ALTER TABLE missions ADD COLUMN attachment_path TEXT")
 
     # Renseigner les réponses attendues pour les missions 1–3 si absentes
     cursor.execute("""
@@ -204,25 +218,76 @@ def get_mission_info(mission_id):
     db = sqlite3.connect('enqueteur.db')
     cursor = db.cursor()
 
-    # Inclure expected_answer pour calculer requires_answer, ne pas le renvoyer
-    cursor.execute('SELECT name, description, status, expected_answer FROM missions WHERE mission_id = ?', (mission_id,))
+    # Ajouter attachment_path (pour construire l'URL)
+    cursor.execute('SELECT name, description, status, expected_answer, attachment_path FROM missions WHERE mission_id = ?', (mission_id,))
     mission = cursor.fetchone()
     db.close()
 
     if mission:
-        name, description, status, expected_answer = mission
+        name, description, status, expected_answer, attachment_path = mission
         requires_answer = bool((expected_answer or '').strip())
+        attachment_url = None
+        if attachment_path:
+            # Construit une URL statique vers le fichier
+            attachment_url = url_for('static', filename=f'uploads/missions/{attachment_path}')
         return jsonify({
             'success': True,
             'mission': {
                 'name': name,
                 'description': description,
                 'status': status,
-                'requires_answer': requires_answer
+                'requires_answer': requires_answer,
+                'attachment_url': attachment_url
             }
         })
     else:
         return jsonify({'success': False, 'error': 'Mission non trouvée'}), 404
+
+@app.route('/upload_mission_pdf', methods=['POST'])
+def upload_mission_pdf():
+    # Admin uniquement
+    if 'username' not in session or session.get('role') != 'admin':
+        return jsonify({'success': False, 'error': 'Non autorisé'}), 403
+
+    try:
+        mission_id = int(request.form.get('mission_id', '0'))
+    except ValueError:
+        return jsonify({'success': False, 'error': 'ID de mission invalide.'}), 400
+
+    if mission_id <= 0:
+        return jsonify({'success': False, 'error': 'ID de mission invalide.'}), 400
+
+    if 'file' not in request.files:
+        return jsonify({'success': False, 'error': 'Aucun fichier reçu.'}), 400
+
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'success': False, 'error': 'Nom de fichier vide.'}), 400
+
+    if not allowed_file(file.filename):
+        return jsonify({'success': False, 'error': 'Seuls les fichiers PDF sont acceptés.'}), 400
+
+    filename = secure_filename(file.filename)
+    # Enregistre sous static/uploads/missions/<mission_id>/<filename>
+    dest_dir = os.path.join(UPLOAD_SUBDIR, str(mission_id))
+    os.makedirs(dest_dir, exist_ok=True)
+    save_path = os.path.join(dest_dir, filename)
+    file.save(save_path)
+
+    # Stocke le chemin relatif à partir de uploads/missions/
+    relative_path = f'{mission_id}/{filename}'
+
+    db = sqlite3.connect('enqueteur.db')
+    cursor = db.cursor()
+    cursor.execute('UPDATE missions SET attachment_path = ? WHERE mission_id = ?', (relative_path, mission_id))
+    db.commit()
+    db.close()
+
+    return jsonify({
+        'success': True,
+        'message': 'PDF téléversé avec succès.',
+        'attachment_url': url_for('static', filename=f'uploads/missions/{relative_path}')
+    })
 
 @app.route('/submit_attempt', methods=['POST'])
 def submit_attempt():
