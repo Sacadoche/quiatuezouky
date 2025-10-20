@@ -2,81 +2,61 @@ from flask import Flask, render_template, request, redirect, url_for, session, j
 import sqlite3
 import os
 from collections import defaultdict
+from datetime import datetime
 
 app = Flask(__name__)
 app.secret_key = 'votre_cle_secrete'  # Remplacez par une clé secrète
 
-# Initialisation de la base de données
-def init_db():
+def apply_schema():
     db = sqlite3.connect('enqueteur.db')
     cursor = db.cursor()
 
-    # Création des tables si elles n'existent pas
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS investigators (
-            identite TEXT NOT NULL,
-            username TEXT PRIMARY KEY,
-            password TEXT NOT NULL,
-            alias TEXT NOT NULL,
-            role TEXT DEFAULT 'enqueteur'
-        )
-    ''')
+    # Lire et exécuter le fichier SQL pour créer les tables si elles n'existent pas
+    with open('db/schema.sql', 'r', encoding='utf-8') as f:
+        sql_script = f.read()
+        cursor.executescript(sql_script)
 
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS missions (
-            mission_id INTEGER PRIMARY KEY,
-            name TEXT NOT NULL,
-            description TEXT,
-            status TEXT NOT NULL
-        )
-    ''')
+    # Vérifier et ajouter les colonnes manquantes
+    cursor.execute("PRAGMA table_info(investigator_missions)")
+    existing_columns = [col[1] for col in cursor.fetchall()]
 
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS investigator_missions (
-            investigator_username TEXT NOT NULL,
-            mission_id INTEGER NOT NULL,
-            completed BOOLEAN NOT NULL,
-            PRIMARY KEY (investigator_username, mission_id),
-            FOREIGN KEY (investigator_username) REFERENCES investigators (username),
-            FOREIGN KEY (mission_id) REFERENCES missions (mission_id)
-        )
-    ''')
+    if 'response_time' not in existing_columns:
+        cursor.execute("ALTER TABLE investigator_missions ADD COLUMN response_time TEXT")
+    if 'attempts' not in existing_columns:
+        cursor.execute("ALTER TABLE investigator_missions ADD COLUMN attempts INTEGER DEFAULT 0")
+    if 'validated' not in existing_columns:
+        cursor.execute("ALTER TABLE investigator_missions ADD COLUMN validated BOOLEAN DEFAULT 0")
 
-    # Insertion des données initiales si elles n'existent pas
-    cursor.execute('SELECT COUNT(*) FROM investigators')
-    if cursor.fetchone()[0] == 0:
-        # Insertion des enquêteurs
-        cursor.executemany('INSERT INTO investigators (identite, username, password, alias, role) VALUES (?, ?, ?, ?, ?)',
-                           [('Cindy BRAEM', '340765080', 'B7429', 'L’Encre Noire', 'enqueteur'),
-                            ('Anne BUREL', '101560170', 'M0384', 'La Main Fantôme', 'enqueteur'),
-                            ('Christelle DOUAY', '164007970', 'T5601', 'La Rose de Fer', 'enqueteur'),
-                            ('Noémie BRASSET', '684015202', 'R1947', 'L’Architecte', 'enqueteur'),
-                            ('Elisabeth DANTU', '350001479', 'H0052', 'La Louve Silencieuse', 'enqueteur'),
-                            ('Tiphaine IVON', '301506961', 'Z8316', 'La Veilleuse', 'enqueteur'),
-                            ('Juliette FROUIN', '150046314', 'K4090', 'L’Ombre du Bureau', 'enqueteur'),
-                            ('Amandine COUÉ', '807346951', 'P2673', 'La Sentinelle', 'enqueteur'),
-                            ('Edouard CHOISNET', '104383930', 'S9104', 'Le Fantôme du Dock', 'enqueteur'),
-                            ('Germain MOREAU', '421198366', 'V3268', 'Le Dernier Mot', 'enqueteur'),
-                            ('Anas ZAHRAWI', '733623419', 'C4507', 'Le Gardien', 'enqueteur'),
-                            ('Eric SZWAICER', '640680605', 'L7720', 'Le Sablier', 'enqueteur'),
-                            ('Mehdi BARBIN', '679809258', 'Y1189', 'Le Corbeau', 'enqueteur'),
-                            ('Frédéric LHUMEAU', '398867831', 'D6043', 'Le Chiffreur', 'enqueteur'),
-                            ('Gweltaz ROBERT', '612820234', 'F2506', 'Le Silencieux', 'enqueteur'),
-                            ('Hugues VAN WEYDEVELT', '414552832', 'N8875', 'Le Marcheur', 'enqueteur'),
-                            ('Maxime LESTRELIN', '534127684', 'X0391', 'L’Horloger', 'enqueteur'),
-                            ('Sébastien LACOUR', '420567302', 'E5562', 'Le Dossier Rouge', 'enqueteur'),
+    # Assurer la présence de missions.expected_answer
+    cursor.execute("PRAGMA table_info(missions)")
+    missions_columns = [col[1] for col in cursor.fetchall()]
+    if 'expected_answer' not in missions_columns:
+        cursor.execute("ALTER TABLE missions ADD COLUMN expected_answer TEXT")
+    # Nouveau: message de succès personnalisé
+    cursor.execute("PRAGMA table_info(missions)")
+    missions_columns = [col[1] for col in cursor.fetchall()]
+    if 'success_message' not in missions_columns:
+        cursor.execute("ALTER TABLE missions ADD COLUMN success_message TEXT")
 
-                            ('Mathilde HUBERT', 'macolas', 'macolas', 'Inspecteur Hubert', 'admin')])
-
-        # Insertion des missions
-        missions = [(i, f'Mission {i}', '', 'locked') for i in range(1, 41)]
-        cursor.executemany('INSERT INTO missions (mission_id, name, description, status) VALUES (?, ?, ?, ?)', missions)
+    # Renseigner les réponses attendues pour les missions 1–3 si absentes
+    cursor.execute("""
+        UPDATE missions SET expected_answer = ?
+        WHERE mission_id = ? AND (expected_answer IS NULL OR TRIM(expected_answer) = '')
+    """, ('CANARD', 1))
+    cursor.execute("""
+        UPDATE missions SET expected_answer = ?
+        WHERE mission_id = ? AND (expected_answer IS NULL OR TRIM(expected_answer) = '')
+    """, ('Zouky aime beaucoup trop twerker', 2))
+    cursor.execute("""
+        UPDATE missions SET expected_answer = ?
+        WHERE mission_id = ? AND (expected_answer IS NULL OR TRIM(expected_answer) = '')
+    """, ('Enkhuizen', 3))
 
     db.commit()
     db.close()
 
-# Appel de l'initialisation de la base de données
-init_db()
+# Appel de la fonction pour appliquer le schéma au démarrage
+apply_schema()
 
 @app.route('/')
 def index():
@@ -108,10 +88,9 @@ def index():
     # Récupérer les missions complétées par l'enquêteur
     cursor.execute('''
         SELECT mission_id FROM investigator_missions
-        WHERE investigator_username = ? AND completed = 1
+        WHERE investigator_username = ? AND validated = 1
     ''', (username,))
     completed_missions = [row[0] for row in cursor.fetchall()]
-
 
     # Récupérer toutes les missions
     cursor.execute('SELECT * FROM missions')
@@ -195,43 +174,185 @@ def update_investigator_mission():
 
 @app.route('/update_mission_info', methods=['POST'])
 def update_mission_info():
-    if 'username' not in session or session['username'] != 'macolas':
+    if 'username' not in session or session['role'] != 'admin':
         return jsonify({'success': False, 'error': 'Non autorisé'}), 403
 
     mission_id = int(request.form['mission_id'])
     name = request.form['name']
     description = request.form['description']
+    status = request.form['status']
+    # Nouveau: champs admin
+    expected_answer = (request.form.get('expected_answer') or '').strip()
+    success_message = (request.form.get('success_message') or '').strip()
 
     db = sqlite3.connect('enqueteur.db')
     cursor = db.cursor()
 
-    cursor.execute('UPDATE missions SET name = ?, description = ? WHERE mission_id = ?', (name, description, mission_id))
+    cursor.execute('''
+        UPDATE missions
+        SET name = ?, description = ?, status = ?, expected_answer = ?, success_message = ?
+        WHERE mission_id = ?
+    ''', (name, description, status, expected_answer or None, success_message or None, mission_id))
+
     db.commit()
     db.close()
 
-    return jsonify({'success': True})
+    return jsonify({'success': True, 'message': 'Mission mise à jour avec succès.'})
 
 @app.route('/get_mission_info/<int:mission_id>', methods=['GET'])
 def get_mission_info(mission_id):
     db = sqlite3.connect('enqueteur.db')
     cursor = db.cursor()
 
-    cursor.execute('SELECT name, description, status FROM missions WHERE mission_id = ?', (mission_id,))
+    # Inclure expected_answer pour calculer requires_answer, ne pas le renvoyer
+    cursor.execute('SELECT name, description, status, expected_answer FROM missions WHERE mission_id = ?', (mission_id,))
     mission = cursor.fetchone()
     db.close()
 
     if mission:
+        name, description, status, expected_answer = mission
+        requires_answer = bool((expected_answer or '').strip())
         return jsonify({
             'success': True,
             'mission': {
-                'name': mission[0],
-                'description': mission[1],
-                'status': mission[2]
+                'name': name,
+                'description': description,
+                'status': status,
+                'requires_answer': requires_answer
             }
         })
     else:
         return jsonify({'success': False, 'error': 'Mission non trouvée'}), 404
 
+@app.route('/submit_attempt', methods=['POST'])
+def submit_attempt():
+    if 'username' not in session:
+        return jsonify({'success': False, 'error': 'Non autorisé'}), 403
+
+    try:
+        mission_id = int(request.form['mission_id'])
+    except (ValueError, KeyError):
+        return jsonify({'success': False, 'error': 'ID de mission invalide.'}), 400
+
+    response = request.form.get('response', '').strip()
+    if not response:
+        return jsonify({'success': False, 'error': 'La réponse est vide.'}), 400
+
+    username = session['username']
+    response_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+    db = sqlite3.connect('enqueteur.db')
+    cursor = db.cursor()
+
+    # Récupérer la réponse attendue et le message de succès personnalisé
+    cursor.execute('SELECT expected_answer, success_message FROM missions WHERE mission_id = ?', (mission_id,))
+    row = cursor.fetchone()
+    if not row:
+        db.close()
+        return jsonify({'success': False, 'error': 'Mission inconnue.'}), 404
+
+    expected_response = (row[0] or '').strip()
+    mission_success_message = (row[1] or '').strip() or 'Mission validée avec succès !'
+
+    if not expected_response:
+        db.close()
+        return jsonify({'success': False, 'error': 'Réponse attendue non définie pour cette mission.'}), 400
+
+    # Normalisation simple
+    def normalize(s: str) -> str:
+        return " ".join(s.strip().lower().split())
+
+    # Récupérer les informations actuelles de la mission pour cet enquêteur
+    cursor.execute('''
+        SELECT attempts, validated FROM investigator_missions
+        WHERE investigator_username = ? AND mission_id = ?
+    ''', (username, mission_id))
+    result = cursor.fetchone()
+
+    if result:
+        attempts, validated = result
+        if validated:
+            db.close()
+            return jsonify({'success': False, 'error': 'Mission déjà validée.'}), 400
+
+        attempts += 1
+        is_valid = normalize(response) == normalize(expected_response)
+
+        cursor.execute('''
+            UPDATE investigator_missions
+            SET attempts = ?, response = ?, response_time = ?, validated = ?, completed = CASE WHEN ? THEN 1 ELSE completed END
+            WHERE investigator_username = ? AND mission_id = ?
+        ''', (attempts, response, response_time, 1 if is_valid else 0, is_valid, username, mission_id))
+    else:
+        attempts = 1
+        is_valid = normalize(response) == normalize(expected_response)
+
+        cursor.execute('''
+            INSERT INTO investigator_missions (investigator_username, mission_id, completed, response, response_time, attempts, validated)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (username, mission_id, 1 if is_valid else 0, response, response_time, attempts, 1 if is_valid else 0))
+
+    db.commit()
+    db.close()
+
+    if is_valid:
+        return jsonify({'success': True, 'message': mission_success_message, 'attempts': attempts, 'response_time': response_time})
+    else:
+        return jsonify({'success': False, 'error': 'Réponse incorrecte.', 'attempts': attempts, 'response_time': response_time})
+
+@app.route('/admin_validate_mission', methods=['POST'])
+def admin_validate_mission():
+    if 'username' not in session or session['role'] != 'admin':
+        return jsonify({'success': False, 'error': 'Non autorisé'}), 403
+
+    investigator = request.form['investigator']
+    mission_id = int(request.form['mission_id'])
+
+    db = sqlite3.connect('enqueteur.db')
+    cursor = db.cursor()
+
+    # Mettre à jour ou insérer une tentative réussie pour l'enquêteur
+    response_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')  # Heure actuelle
+    cursor.execute('''
+        INSERT INTO investigator_missions (investigator_username, mission_id, completed, response, response_time, attempts, validated)
+        VALUES (?, ?, 1, 'Validé par admin', ?, 1, 1)
+        ON CONFLICT(investigator_username, mission_id)
+        DO UPDATE SET
+            completed = 1,
+            response = 'Validé par admin',
+            response_time = ?,
+            attempts = attempts + 1,
+            validated = 1
+    ''', (investigator, mission_id, response_time, response_time))
+
+    db.commit()
+    db.close()
+
+    return jsonify({'success': True, 'message': f'Mission {mission_id} validée pour {investigator}.'})
+
+@app.route('/mission_status', methods=['GET'])
+def mission_status():
+    if 'username' not in session:
+        return jsonify({'success': False, 'error': 'Non autorisé'}), 403
+
+    mission_id = request.args.get('mission_id', type=int)
+    username = session['username']
+
+    db = sqlite3.connect('enqueteur.db')
+    cursor = db.cursor()
+
+    cursor.execute('''
+        SELECT attempts, validated FROM investigator_missions
+        WHERE investigator_username = ? AND mission_id = ?
+    ''', (username, mission_id))
+    result = cursor.fetchone()
+    db.close()
+
+    if result:
+        attempts, validated = result
+        return jsonify({'success': True, 'attempts': attempts, 'validated': validated})
+    else:
+        return jsonify({'success': True, 'attempts': 0, 'validated': False})
 
 if __name__ == '__main__':
     app.run(debug=True)

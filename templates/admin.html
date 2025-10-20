@@ -37,6 +37,22 @@
                                 <option value="unlocked" {% if mission[3] == 'unlocked' %}selected{% endif %}>Déverrouillé</option>
                             </select>
                             <button class="btn btn-primary mt-2 save-mission-info" data-mission-id="{{ mission[0] }}">Enregistrer</button>
+
+                            <!-- Nouveaux champs admin -->
+                            <div class="mt-3">
+                              <label class="form-label">Réponse attendue</label>
+                              <input type="text" class="form-control mission-expected-input"
+                                     data-mission-id="{{ mission[0] }}"
+                                     value="{{ mission[4] or '' }}"
+                                     placeholder="Ex: CANARD">
+                            </div>
+                            <div class="mt-2">
+                              <label class="form-label">Message de succès</label>
+                              <input type="text" class="form-control mission-success-input"
+                                     data-mission-id="{{ mission[0] }}"
+                                     value="{{ mission[5] or '' }}"
+                                     placeholder="Ex: Bravo, dossier classé !">
+                            </div>
                         </td>
                     </tr>
                     {% endfor %}
@@ -66,9 +82,8 @@
                     {% endif %}
                     <div class="col">
                         <div class="form-check form-switch">
-                            <input class="form-check-input investigator-mission-checkbox"
+                            <input class="form-check-input admin-validate-checkbox"
                                    type="checkbox"
-                                   id="mission-{{ investigator[1] }}-{{ mission_id }}"
                                    data-investigator="{{ investigator[1] }}"
                                    data-mission-id="{{ mission_id }}"
                                    {% if mission_id in completed_missions[investigator[1]] %}checked{% endif %}>
@@ -88,82 +103,78 @@
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    // Gestion des changements de statut des missions
-    document.querySelectorAll('.mission-status-select').forEach(select => {
-        select.addEventListener('change', function() {
+    // Gestion de la validation des missions par l'admin
+    document.querySelectorAll('.admin-validate-checkbox').forEach(checkbox => {
+        checkbox.addEventListener('change', function() {
+            const investigator = this.dataset.investigator;
             const missionId = this.dataset.missionId;
-            const newStatus = this.value;
+            const isChecked = this.checked;
 
-            fetch('/update_mission_status', {
+            fetch('/admin_validate_mission', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded',
                 },
-                body: `mission_id=${missionId}&new_status=${newStatus}`
+                body: `investigator=${investigator}&mission_id=${missionId}`
             })
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    document.getElementById(`mission-status-${missionId}`).textContent = newStatus;
+                    alert(data.message);
+
+                    // Mettre à jour l'affichage pour les enquêteurs
+                    const missionLabel = document.querySelector(`label[for="mission-${investigator}-${missionId}"]`);
+                    if (missionLabel) {
+                        missionLabel.textContent = `Mission ${missionId} (Validée)`;
+                    }
                 } else {
                     alert('Erreur: ' + data.error);
+                    this.checked = false; // Réinitialiser la case à cocher en cas d'erreur
                 }
             })
             .catch(error => {
-                console.error('Error:', error);
+                console.error('Erreur lors de la validation de la mission :', error);
+                this.checked = false; // Réinitialiser la case à cocher en cas d'erreur
             });
         });
     });
+});
 
-    // Gestion des cases à cocher pour les missions des enquêteurs
-    document.querySelectorAll('.investigator-mission-checkbox').forEach(checkbox => {
-        checkbox.addEventListener('change', function() {
-            const investigator = this.dataset.investigator;
-            const missionId = this.dataset.missionId;
-            const action = this.checked ? 'add' : 'remove';
-
-            fetch('/update_investigator_mission', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                },
-                body: `investigator=${investigator}&mission_id=${missionId}&action=${action}`
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (!data.success) {
-                    alert('Erreur: ' + data.error);
-                    this.checked = !this.checked; // Revenir à l'état précédent en cas d'erreur
-                }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-            });
-        });
-    });
-
+document.addEventListener('DOMContentLoaded', function() {
     // Gestion de l'enregistrement des informations des missions
     document.querySelectorAll('.save-mission-info').forEach(button => {
         button.addEventListener('click', function() {
             const missionId = this.dataset.missionId;
-            const name = document.querySelector(`.mission-name-input[data-mission-id="${missionId}"]`).value;
-            const description = document.querySelector(`.mission-description-input[data-mission-id="${missionId}"]`).value;
+            const name = document.querySelector(`.mission-name-input[data-mission-id="${missionId}"]`).value.trim();
+            const description = document.querySelector(`.mission-description-input[data-mission-id="${missionId}"]`).value.trim();
+            const status = document.querySelector(`.mission-status-select[data-mission-id="${missionId}"]`).value;
+            // Nouveaux champs
+            const expectedAnswer = (document.querySelector(`.mission-expected-input[data-mission-id="${missionId}"]`)?.value || '').trim();
+            const successMessage = (document.querySelector(`.mission-success-input[data-mission-id="${missionId}"]`)?.value || '').trim();
+
+            if (!name || !description) {
+                alert('Le nom et la description de la mission ne peuvent pas être vides.');
+                return;
+            }
 
             fetch('/update_mission_info', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded',
                 },
-                body: `mission_id=${missionId}&name=${encodeURIComponent(name)}&description=${encodeURIComponent(description)}`
+                body: `mission_id=${missionId}&name=${encodeURIComponent(name)}&description=${encodeURIComponent(description)}&status=${status}&expected_answer=${encodeURIComponent(expectedAnswer)}&success_message=${encodeURIComponent(successMessage)}`
             })
             .then(response => response.json())
             .then(data => {
-                if (!data.success) {
+                if (data.success) {
+                    alert('Mission mise à jour avec succès !');
+                    document.getElementById(`mission-status-${missionId}`).textContent = status;
+                } else {
                     alert('Erreur: ' + data.error);
                 }
             })
             .catch(error => {
-                console.error('Error:', error);
+                console.error('Erreur lors de la mise à jour de la mission :', error);
             });
         });
     });

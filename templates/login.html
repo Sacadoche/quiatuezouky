@@ -6,9 +6,18 @@
         <h5 class="card-title text-center">Connexion</h5>
       </div>
       <div class="card-body">
+        <!-- Message personnalisé -->
+        <div class="alert alert-info text-center">
+          <strong>Bienvenue dans la matrice, enquêteur.</strong><br />
+          Saisissez les identifiants que vous avez reçus dans votre enveloppe.
+        </div>
+
+        <!-- Affichage des erreurs -->
         {% if error %}
         <div class="alert alert-danger">{{ error }}</div>
         {% endif %}
+
+        <!-- Formulaire de connexion -->
         <form method="POST" action="{{ url_for('login') }}">
           <div class="mb-3">
             <label for="username" class="form-label">Nom d'utilisateur</label>
@@ -27,6 +36,7 @@
               class="form-control"
               id="password"
               name="password"
+              autocomplete="current-password"
               required
             />
           </div>
