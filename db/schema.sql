@@ -84,14 +84,4 @@ VALUES
     (27, 'Mission 27', '', 'locked'),
     (28, 'Mission 28', '', 'locked'),
     (29, 'Mission 29', '', 'locked'),
-    (30, 'Mission 30', '', 'locked'),
-    (31, 'Mission 31', '', 'locked'),
-    (32, 'Mission 32', '', 'locked'),
-    (33, 'Mission 33', '', 'locked'),
-    (34, 'Mission 34', '', 'locked'),
-    (35, 'Mission 35', '', 'locked'),
-    (36, 'Mission 36', '', 'locked'),
-    (37, 'Mission 37', '', 'locked'),
-    (38, 'Mission 38', '', 'locked'),
-    (39, 'Mission 39', '', 'locked'),
-    (40, 'Mission 40', '', 'locked');
+    (30, 'Mission 30', '', 'locked');

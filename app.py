@@ -71,6 +71,10 @@ def apply_schema():
         WHERE mission_id = ? AND (expected_answer IS NULL OR TRIM(expected_answer) = '')
     """, ('Enkhuizen', 3))
 
+    # Retirer les missions au-delà de 30 et leurs tentatives
+    cursor.execute('DELETE FROM investigator_missions WHERE mission_id > 30')
+    cursor.execute('DELETE FROM missions WHERE mission_id > 30')
+
     db.commit()
     db.close()
 
