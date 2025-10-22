@@ -96,7 +96,7 @@
                     {% endif %}
                     {% endif %}
                     <div class="col">
-                        <div class="form-check form-switch">
+                        <div class="form-check form-switch d-flex align-items-center gap-2">
                             <input class="form-check-input admin-validate-checkbox"
                                    type="checkbox"
                                    data-investigator="{{ investigator[1] }}"
@@ -105,6 +105,11 @@
                             <label class="form-check-label" for="mission-{{ investigator[1] }}-{{ mission_id }}">
                                 Mission {{ mission_id }}
                             </label>
+                            <button type="button"
+                                    class="btn btn-sm btn-outline-warning reset-attempts-btn"
+                                    title="Réinitialiser les tentatives"
+                                    data-investigator="{{ investigator[1] }}"
+                                    data-mission-id="{{ mission_id }}">Reset tentatives</button>
                         </div>
                     </div>
                     {% endfor %}
@@ -115,6 +120,11 @@
         {% endfor %}
     </div>
 </div>
+
+<script>
+// Taille max fournie par le serveur (Mo)
+const MAX_PDF_MB = {{ max_pdf_mb or 20 }};
+</script>
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
@@ -130,26 +140,24 @@ document.addEventListener('DOMContentLoaded', function() {
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded',
                 },
-                body: `investigator=${investigator}&mission_id=${missionId}`
+                body: `investigator=${encodeURIComponent(investigator)}&mission_id=${encodeURIComponent(missionId)}&validated=${isChecked ? '1' : '0'}`
             })
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
                     alert(data.message);
-
-                    // Mettre à jour l'affichage pour les enquêteurs
                     const missionLabel = document.querySelector(`label[for="mission-${investigator}-${missionId}"]`);
                     if (missionLabel) {
-                        missionLabel.textContent = `Mission ${missionId} (Validée)`;
+                        missionLabel.textContent = isChecked ? `Mission ${missionId} (Validée)` : `Mission ${missionId}`;
                     }
                 } else {
                     alert('Erreur: ' + data.error);
-                    this.checked = false; // Réinitialiser la case à cocher en cas d'erreur
+                    this.checked = !isChecked; // revert on error
                 }
             })
             .catch(error => {
                 console.error('Erreur lors de la validation de la mission :', error);
-                this.checked = false; // Réinitialiser la case à cocher en cas d'erreur
+                this.checked = !isChecked; // revert on error
             });
         });
     });
@@ -204,6 +212,10 @@ document.addEventListener('DOMContentLoaded', function() {
       const file = input?.files?.[0];
       if (!file) { alert('Veuillez sélectionner un PDF.'); return; }
       if (file.type !== 'application/pdf') { alert('Seuls les fichiers PDF sont acceptés.'); return; }
+      if (MAX_PDF_MB && file.size > MAX_PDF_MB * 1024 * 1024) {
+        alert(`Fichier trop volumineux (${(file.size/1024/1024).toFixed(1)} Mo). Maximum: ${MAX_PDF_MB} Mo.`);
+        return;
+      }
 
       const fd = new FormData();
       fd.append('mission_id', missionId);
@@ -223,6 +235,32 @@ document.addEventListener('DOMContentLoaded', function() {
         }
       })
       .catch(e => console.error('Erreur upload PDF:', e));
+    });
+  });
+});
+
+// Reset tentatives par mission/enquêteur
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.reset-attempts-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+      const investigator = this.dataset.investigator;
+      const missionId = this.dataset.missionId;
+      if (!confirm(`Réinitialiser les tentatives de ${investigator} pour la mission ${missionId} ?`)) return;
+
+      fetch('/admin_reset_attempts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `investigator=${encodeURIComponent(investigator)}&mission_id=${encodeURIComponent(missionId)}`
+      })
+      .then(r => r.json())
+      .then(d => {
+        if (d.success) {
+          alert(d.message);
+        } else {
+          alert('Erreur: ' + d.error);
+        }
+      })
+      .catch(e => console.error('Erreur reset tentatives:', e));
     });
   });
 });

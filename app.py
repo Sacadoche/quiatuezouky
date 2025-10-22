@@ -4,9 +4,14 @@ import os
 from collections import defaultdict
 from datetime import datetime
 from werkzeug.utils import secure_filename
+from werkzeug.exceptions import RequestEntityTooLarge
 
 app = Flask(__name__)
 app.secret_key = 'votre_cle_secrete'  # Remplacez par une clé secrète
+
+# Limite d'upload (Mo) configurable via env, défaut 20 Mo
+MAX_UPLOAD_MB = int(os.getenv('MAX_UPLOAD_MB', '20'))
+app.config['MAX_CONTENT_LENGTH'] = MAX_UPLOAD_MB * 1024 * 1024
 
 # Dossiers et extensions autorisées pour les PDF
 UPLOAD_SUBDIR = os.path.join('static', 'uploads', 'missions')
@@ -72,6 +77,13 @@ def apply_schema():
 # Appel de la fonction pour appliquer le schéma au démarrage
 apply_schema()
 
+@app.errorhandler(RequestEntityTooLarge)
+def handle_413(e):
+    max_mb = app.config.get('MAX_CONTENT_LENGTH', 0) // (1024 * 1024)
+    if request.path.startswith('/upload_mission_pdf'):
+        return jsonify({'success': False, 'error': f'Fichier trop volumineux. Taille max: {max_mb} Mo.'}), 413
+    return "Fichier trop volumineux.", 413
+
 @app.route('/')
 def index():
     if 'username' not in session:
@@ -97,7 +109,13 @@ def index():
             completed_missions[row[0]].append(row[1])
 
         db.close()
-        return render_template('admin.html', investigators=investigators, missions=missions, completed_missions=completed_missions)
+        return render_template(
+            'admin.html',
+            investigators=investigators,
+            missions=missions,
+            completed_missions=completed_missions,
+            max_pdf_mb=(app.config.get('MAX_CONTENT_LENGTH', 0) // (1024 * 1024)) or MAX_UPLOAD_MB
+        )
 
     # Récupérer les missions complétées par l'enquêteur
     cursor.execute('''
@@ -395,7 +413,7 @@ def admin_validate_mission():
     cursor = db.cursor()
 
     if desired_state == 1:
-        # Valider
+        # Valider + enregistrer une tentative (attempts += 1)
         response_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         cursor.execute('''
             INSERT INTO investigator_missions (investigator_username, mission_id, completed, response, response_time, attempts, validated)
@@ -405,12 +423,12 @@ def admin_validate_mission():
                 completed = 1,
                 response = 'Validé par admin',
                 response_time = excluded.response_time,
-                attempts = CASE WHEN investigator_missions.attempts IS NULL OR investigator_missions.attempts = 0 THEN 1 ELSE investigator_missions.attempts END,
+                attempts = COALESCE(investigator_missions.attempts, 0) + 1,
                 validated = 1
         ''', (investigator, mission_id, response_time))
         msg = f'Mission {mission_id} validée pour {investigator}.'
     else:
-        # Invalider
+        # Invalider sans toucher au compteur de tentatives
         cursor.execute('''
             INSERT INTO investigator_missions (investigator_username, mission_id, completed, response, response_time, attempts, validated)
             VALUES (?, ?, 0, NULL, NULL, 0, 0)
@@ -427,6 +445,39 @@ def admin_validate_mission():
     db.close()
 
     return jsonify({'success': True, 'message': msg})
+
+@app.route('/admin_reset_attempts', methods=['POST'])
+def admin_reset_attempts():
+    if 'username' not in session or session.get('role') != 'admin':
+        return jsonify({'success': False, 'error': 'Non autorisé'}), 403
+
+    investigator = (request.form.get('investigator') or '').strip()
+    try:
+        mission_id = int(request.form.get('mission_id', '0'))
+    except ValueError:
+        return jsonify({'success': False, 'error': 'ID de mission invalide.'}), 400
+    if not investigator or mission_id <= 0:
+        return jsonify({'success': False, 'error': 'Paramètres invalides.'}), 400
+
+    db = sqlite3.connect('enqueteur.db')
+    cursor = db.cursor()
+    try:
+        # Tente un UPDATE d'abord
+        cursor.execute('''
+            UPDATE investigator_missions
+            SET attempts = 0
+            WHERE investigator_username = ? AND mission_id = ?
+        ''', (investigator, mission_id))
+        if cursor.rowcount == 0:
+            # Aucune ligne => créer une ligne avec attempts=0 (ne valide pas)
+            cursor.execute('''
+                INSERT INTO investigator_missions (investigator_username, mission_id, completed, response, response_time, attempts, validated)
+                VALUES (?, ?, 0, NULL, NULL, 0, 0)
+            ''', (investigator, mission_id))
+        db.commit()
+        return jsonify({'success': True, 'message': f'Tentatives réinitialisées pour {investigator}, mission {mission_id}.'})
+    finally:
+        db.close()
 
 @app.route('/mission_status', methods=['GET'])
 def mission_status():
